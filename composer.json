@@ -25,7 +25,8 @@
     "symfony/dependency-injection": "^4",
     "symfony/options-resolver": "^4",
     "symfony/yaml": "^4",
-    "monolog/monolog": "*"
+    "monolog/monolog": "*",
+    "symfony/console": "^4"
   },
   "autoload": {
     "psr-4": {
