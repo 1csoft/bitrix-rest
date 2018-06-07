@@ -56,7 +56,7 @@ class RestBase
 //		$this->request->setFormat($this->options['format'], false);
 		$this->request->setRequestFormat($this->options['format']);
 		static::$eventDispatcher = new EventDispatcher();
-
+		$this->response = new Response(null);
 	}
 
 	/**
@@ -127,14 +127,21 @@ class RestBase
 		$routes = $this->getRoutes();
 
 		$matcher = new Routing\Matcher\UrlMatcher($routes, $context);
-		$attrs = $matcher->match($this->request->getPathInfo());
-		foreach ($attrs as $code => $val) {
-			$this->request->attributes->set($code, $val);
+		try {
+			$attrs = $matcher->match($this->request->getPathInfo());
+			foreach ($attrs as $code => $val) {
+				$this->request->attributes->set($code, $val);
+			}
+
+			if($attrs['_format']){
+				$this->request->setFormat($attrs['_format'], false);
+			}
+		} catch (Routing\Exception\ResourceNotFoundException $e){
+//			dump($routes, $e);
+			$this->response->setStatusCode(404);
+			\CHTTP::SetStatus('404');
 		}
 
-		if($attrs['_format']){
-			$this->request->setFormat($attrs['_format'], false);
-		}
 
 		$this->event = new RequestEvent($this->request);
 		static::getEventDispatcher()->dispatch('request.start', $this->event);
@@ -157,11 +164,19 @@ class RestBase
 
 		static::getEventDispatcher()->dispatch('request.beforeResult', $this->event);
 		try {
-			$result = $this->response = $mainHandler->handle($this->request);
+			$result = $mainHandler->handle($this->request);
+			$this->response->setStatusCode(Response::HTTP_OK);
+
 		} catch (Exceptions\Main $e){
 			$out['error'] = $e->__toString();
 		} catch (\Exception $e){
 			$out['error'] = $e->__toString();
+		}
+
+		switch ($this->response->getStatusCode()){
+			case Response::HTTP_NOT_FOUND:
+				$out['error'] = '404 not found';
+				break;
 		}
 
 		if(!is_null($out['error'])){
@@ -174,7 +189,6 @@ class RestBase
 		static::getEventDispatcher()->dispatch('request.afterResult', $this->event);
 
 		$response = '';
-		$this->response = new Response($response);
 		switch ($this->request->getFormat(false)){
 			case 'xml':
 
@@ -184,7 +198,7 @@ class RestBase
 			default:
 				$response = Json::encode($out);
 				$this->response->headers->set('Content-type', Request::getMimeTypes($this->request->getRequestFormat()));
-//				$this->response->headers->set('Accept', Request::getMimeTypes($this->request->getRequestFormat()));
+				$this->response->headers->set('Accept', Request::getMimeTypes($this->request->getRequestFormat()));
 				break;
 		}
 		$this->response->setContent($response);
@@ -223,5 +237,24 @@ class RestBase
 		return static::$eventDispatcher;
 	}
 
+	/**
+	 * @method addOption
+	 * @param null $name
+	 * @param mixed $value
+	 */
+	public function addOption($name = null, $value)
+	{
+		$this->options[$name] = $value;
+	}
 
+	/**
+	 * @method getOption
+	 * @param $name
+	 *
+	 * @return mixed|null
+	 */
+	public function getOption($name)
+	{
+		return isset($this->options[$name]) ? $this->options[$name] : null;
+	}
 }

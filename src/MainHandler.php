@@ -28,9 +28,9 @@ class MainHandler implements HttpKernelInterface
 		$this->contentRequest = $request->getContent();
 
 		$attrs = $request->attributes;
-		$controller = $attrs->get('_controller');
+		$controller = explode(':', $attrs->get('_controller'));
 		$result = null;
-		$action = $attrs->get('method');
+		$action = $controller[1] ?: $attrs->get('method');
 
 		if ($attrs->has('_module')){
 			if(!Main\Loader::includeModule($attrs->has('_module'))){
@@ -41,13 +41,14 @@ class MainHandler implements HttpKernelInterface
 		try {
 			if ($attrs->has('_component')) {
 				\CBitrixComponent::includeComponentClass($attrs->get('_component'));
-				$reflection = new \ReflectionClass($controller);
+				$reflection = new \ReflectionClass($controller[0]);
 				$instance = $reflection->newInstance();
 				$result = $instance->$action($request);
 				// todo сделать установку arParams для компонента
 			} else {
-				$reflection = new \ReflectionClass($controller);
+				$reflection = new \ReflectionClass($controller[0]);
 				$instance = $reflection->newInstance();
+
 				if(strlen($action) == 0){
 					if(is_callable([$instance, '__invoke'])){
 						dd($instance);
