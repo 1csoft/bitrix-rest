@@ -7,7 +7,9 @@
 
 namespace Soft1c\Rest;
 
+use Bitrix\Main\Diag\Debug;
 use Bitrix\Main\Web\Json;
+use Sarasvati\Auth\UserTokenTable;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -52,6 +54,7 @@ class RestBase
 		$this->options = $resolver->resolve($options);
 
 		$this->request = Request::createFromGlobals();
+
 		$this->routerFile = $this->options['routes'].'.'.$this->options['type'];
 //		$this->request->setFormat($this->options['format'], false);
 		$this->request->setRequestFormat($this->options['format']);
@@ -145,6 +148,11 @@ class RestBase
 
 		$this->event = new RequestEvent($this->request);
 		static::getEventDispatcher()->dispatch('request.start', $this->event);
+
+		if($this->request->headers->has('AuthenticationToken')){
+			UserTokenTable::authByToken($this->request->headers->get('AuthenticationToken'));
+		}
+
 		return $this;
 	}
 
@@ -170,7 +178,8 @@ class RestBase
 		} catch (Exceptions\Main $e){
 			$out['error'] = $e->__toString();
 		} catch (\Exception $e){
-			$out['error'] = $e->__toString();
+			$out['trace'] = $e->__toString();
+			$out['error'] = sprintf('[%d] %s', $e->getCode(), $e->getMessage());
 		}
 
 		switch ($this->response->getStatusCode()){

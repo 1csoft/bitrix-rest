@@ -56,10 +56,12 @@ class MainHandler implements HttpKernelInterface
 
 				if (strlen($action) == 0){
 					if (is_callable([$instance, '__invoke'])){
-						dd($instance);
+//						dd($instance);
 					}
 				} elseif (is_callable([$instance, $action])) {
 					$result = $instance->$action($this->request);
+
+
 					// todo exception router callable method
 				}
 			}
@@ -80,6 +82,9 @@ class MainHandler implements HttpKernelInterface
 	protected function convertRequestBody($body = '')
 	{
 		if($this->request->getMethod() !== Request::METHOD_GET && strlen($body) > 0){
+
+//			Main\Diag\Debug::writeToFile($body, 'body');
+
 			switch ($this->request->getContentType()) {
 				case 'json':
 					$this->contentRequest = (array)Main\Web\Json::decode($body);
@@ -120,7 +125,6 @@ class MainHandler implements HttpKernelInterface
 				$iterator->offsetSet($k, htmlspecialcharsbx($item));
 			}
 		}
-
 		return $iterator;
 	}
 }
