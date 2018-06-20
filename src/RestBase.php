@@ -37,6 +37,9 @@ class RestBase
 
 	/** @var RequestEvent */
 	protected $event;
+
+	/** @var IAuthStrategy */
+	protected $authHandler = null;
 	/**
 	 * RestBase constructor.
 	 *
@@ -121,6 +124,7 @@ class RestBase
 	/**
 	 * @method start
 	 * @return $this
+	 * @throws Exceptions\RestException
 	 */
 	public function start()
 	{
@@ -150,9 +154,16 @@ class RestBase
 		$this->event = new RequestEvent($this->request);
 		static::getEventDispatcher()->dispatch('request.start', $this->event);
 
-		if($this->request->headers->has('AuthenticationToken')){
-			UserTokenTable::authByToken($this->request->headers->get('AuthenticationToken'));
+		if($this->request->attributes->get('_auth') == true && $this->authHandler instanceof IAuthStrategy){
+			if(!$this->authHandler->authorize($this->request->headers->get('AuthenticationToken'))){
+				\CHTTP::SetStatus(403);
+				throw new Exceptions\RestException('not auth', 403);
+			}
 		}
+
+//		if($this->request->headers->has('AuthenticationToken')){
+//			UserTokenTable::authByToken($this->request->headers->get('AuthenticationToken'));
+//		}
 
 		return $this;
 	}
@@ -277,4 +288,24 @@ class RestBase
 	{
 		return isset($this->options[$name]) ? $this->options[$name] : null;
 	}
+
+	/**
+	 * @method getAuthHandler - get param authHandler
+	 * @return IAuthStrategy
+	 */
+	public function getAuthHandler()
+	{
+		return $this->authHandler;
+	}
+
+	/**
+	 * @method setAuthHandler - set param AuthHandler
+	 * @param IAuthStrategy $authHandler
+	 */
+	public function setAuthHandler(IAuthStrategy $authHandler)
+	{
+		$this->authHandler = $authHandler;
+	}
+
+
 }
