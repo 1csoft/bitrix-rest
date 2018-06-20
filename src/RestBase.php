@@ -10,6 +10,7 @@ namespace Soft1c\Rest;
 use Bitrix\Main\Diag\Debug;
 use Bitrix\Main\Web\Json;
 use Sarasvati\Auth\UserTokenTable;
+use Sarasvati\ExceptionsMain\AuthException;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -175,6 +176,11 @@ class RestBase
 			$result = $mainHandler->handle($this->request);
 			$this->response->setStatusCode(Response::HTTP_OK);
 
+		} catch (AuthException $exception){
+			$this->response->setStatusCode($exception->getCode());
+			\CHTTP::SetStatus($exception->getCode());
+			$out['error'] = $exception->__toString();
+
 		} catch (Exceptions\Main $e){
 			$out['error'] = $e->__toString();
 		} catch (\Exception $e){
@@ -205,7 +211,12 @@ class RestBase
 			case 'html':
 				break;
 			default:
-				$response = Json::encode($out);
+				if($this->options['JSON_UNESCAPED_UNICODE']){
+					$response = Json::encode($out, JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_UNICODE);
+				} else {
+					$response = Json::encode($out);
+				}
+
 				$this->response->headers->set('Content-type', Request::getMimeTypes($this->request->getRequestFormat()));
 				$this->response->headers->set('Accept', Request::getMimeTypes($this->request->getRequestFormat()));
 				break;

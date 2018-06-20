@@ -81,9 +81,11 @@ class MainHandler implements HttpKernelInterface
 	 */
 	protected function convertRequestBody($body = '')
 	{
+
 		if($this->request->getMethod() !== Request::METHOD_GET && strlen($body) > 0){
 
 //			Main\Diag\Debug::writeToFile($body, 'body');
+
 
 			switch ($this->request->getContentType()) {
 				case 'json':
