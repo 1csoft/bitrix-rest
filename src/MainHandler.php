@@ -22,6 +22,9 @@ class MainHandler implements HttpKernelInterface
 	/** @var Request */
 	protected $request;
 
+	/** @var IHttpConvertor */
+	protected $converter;
+
 	public function __construct()
 	{
 	}
@@ -33,14 +36,13 @@ class MainHandler implements HttpKernelInterface
 		$attrs = $this->request->attributes;
 		$controller = explode('::', $attrs->get('_controller'));
 		$result = null;
-		$action = $controller[1] ? : $attrs->get('method');
+		$action = $controller[1] ? : $attrs->get('action');
 
 		if ($attrs->has('_module')){
 			if (!Main\Loader::includeModule($attrs->has('_module'))){
 				throw new Exceptions\RouterFileException('Module '.$attrs->has('_module').' not found or not installed');
 			}
 		}
-
 		$this->contentRequest = $this->convertRequestBody($this->request->getContent());
 
 		try {
@@ -93,11 +95,11 @@ class MainHandler implements HttpKernelInterface
 					break;
 
 				case 'xml':
-
+					$this->contentRequest = $this->getConverter()->decode($body);
 					break;
 			}
 
-			$this->contentRequest = $this->filterRequest($this->contentRequest);
+//			$this->contentRequest = $this->filterRequest($this->contentRequest);
 
 			foreach ($this->contentRequest as $code => $value) {
 				$this->request->request->set($code, $value);
@@ -129,4 +131,23 @@ class MainHandler implements HttpKernelInterface
 		}
 		return $iterator;
 	}
+
+	/**
+	 * @method getConverter - get param converter
+	 * @return IHttpConvertor
+	 */
+	public function getConverter()
+	{
+		return $this->converter;
+	}
+
+	/**
+	 * @method setConverter - set param Converter
+	 * @param IHttpConvertor $converter
+	 */
+	public function setConverter(IHttpConvertor $converter)
+	{
+		$this->converter = $converter;
+	}
+
 }

@@ -18,13 +18,13 @@ use Soft1c\Rest\Exceptions;
 
 class RestBase
 {
-	/** @var array  */
+	/** @var array */
 	protected $options;
 
-	/** @var string  */
+	/** @var string */
 	protected $routerFile = '';
 
-	/** @var Request  */
+	/** @var Request */
 	protected $request;
 
 	/** @var Response */
@@ -38,6 +38,10 @@ class RestBase
 
 	/** @var IAuthStrategy */
 	protected $authHandler = null;
+
+	/** @var null|IHttpConvertor */
+	protected $responseConvertor = null;
+
 	/**
 	 * RestBase constructor.
 	 *
@@ -49,7 +53,7 @@ class RestBase
 		$resolver->setDefaults([
 			'routes' => '/local/php_interface/router',
 			'type' => 'php',
-			'format' => 'json'
+			'format' => 'json',
 		]);
 		$resolver->setDefined(array_keys($options));
 
@@ -60,8 +64,27 @@ class RestBase
 		$this->routerFile = $this->options['routes'].'.'.$this->options['type'];
 //		$this->request->setFormat($this->options['format'], false);
 		$this->request->setRequestFormat($this->options['format']);
+
 		static::$eventDispatcher = new EventDispatcher();
 		$this->response = new Response(null);
+
+		if ($this->options['response_converter'] instanceof IResponseConvertor){
+			$this->responseConvertor = $this->options['response_converter'];
+		} elseif ($this->options['format'] == 'xml') {
+			$this->responseConvertor = new XmlResponseConvertor();
+		} elseif ($this->options['format'] == 'json'){
+			$this->responseConvertor = new JsonConverter();
+			$this->options['response_converter'] = $this->responseConvertor;
+		}
+
+		if ($this->options['request_converter'] instanceof IResponseConvertor){
+			$this->responseConvertor = $this->options['request_converter'];
+		} elseif ($this->options['format'] == 'xml') {
+			$this->options['request_converter'] = new XmlRequestConverter();
+		} elseif ($this->options['format'] == 'json'){
+			$this->responseConvertor = new JsonConverter();
+			$this->options['request_converter'] = $this->responseConvertor;
+		}
 	}
 
 	/**
@@ -73,29 +96,31 @@ class RestBase
 	{
 		$file = $this->request->server->get('DOCUMENT_ROOT').$this->routerFile;
 
-		if(!file_exists($file)){
+		if (!file_exists($file)){
 			throw new Exceptions\RouterFileException('File with routes not found', 1000);
 		}
 		$routes = require_once($file);
 
-		if(!is_array($routes)){
+		if (!is_array($routes)){
 			throw new Exceptions\RouterFileException('File with routes not found', 1001);
 		}
 
-		if(count($routes) == 0){
+		if (count($routes) == 0){
 			throw new Exceptions\RouterFileException('Array with routes is empty', 1002);
 		}
 
 		$routeCollection = new Routing\RouteCollection();
+
+
 		foreach ($routes as $route) {
 			$path = $route['path'];
 			unset($route['path']);
 
 			$methods = !$route['_methods'] ? ['GET', 'POST'] : $route['_methods'];
 
-			$router =  new Routing\Route( $this->options['baseUrl'].$path,
+			$router = new Routing\Route($this->options['baseUrl'].$path,
 				$route,
-				$route['require'] ?: [],
+				$route['require'] ? : [],
 				array(),
 				'',
 				['http', 'https'],
@@ -139,11 +164,11 @@ class RestBase
 				$this->request->attributes->set($code, $val);
 			}
 
-			if($attrs['_format']){
+			if ($attrs['_format']){
 				$this->request->setFormat($attrs['_format'], false);
 			}
-		} catch (Routing\Exception\ResourceNotFoundException $e){
-//			dump($routes, $e);
+		} catch (Routing\Exception\ResourceNotFoundException $e) {
+			dump($routes, $e);
 			$this->response->setStatusCode(404);
 			\CHTTP::SetStatus('404');
 		}
@@ -170,14 +195,16 @@ class RestBase
 			'success' => true,
 			'data' => null,
 			'error' => null,
+			'errorCode' => null
 		];
 		$result = null;
+		$mainHandler->setConverter($this->options['request_converter']);
 
 		static::getEventDispatcher()->dispatch('request.beforeResult', $this->event);
 		try {
 
-			if($this->request->attributes->get('_auth') == true && $this->authHandler instanceof IAuthStrategy){
-				if(!$this->authHandler->authorize($this->request->headers->get('AuthenticationToken'))){
+			if ($this->request->attributes->get('_auth') == true && $this->authHandler instanceof IAuthStrategy){
+				if (!$this->authHandler->authorize($this->request->headers->get('x-token'))){
 					throw new Exceptions\Auth('not auth', 403);
 				}
 			}
@@ -185,25 +212,28 @@ class RestBase
 			$result = $mainHandler->handle($this->request);
 			$this->response->setStatusCode(Response::HTTP_OK);
 
-		} catch (Exceptions\Auth $exception){
+		} catch (Exceptions\Auth $exception) {
 			$this->response->setStatusCode($exception->getCode());
 			\CHTTP::SetStatus($exception->getCode());
 			$out['error'] = $exception->__toString();
-
-		} catch (Exceptions\Main $e){
+			$out['errorCode'] = $exception->getCode();
+		} catch (Exceptions\Main $e) {
 			$out['error'] = $e->__toString();
-		} catch (\Exception $e){
+			$out['errorCode'] = $e->getCode();
+		} catch (\Exception $e) {
 			$out['trace'] = $e->__toString();
-			$out['error'] = sprintf('[%d] %s', $e->getCode(), $e->getMessage());
+			$out['error'] = sprintf('%s', $e->getMessage());
+			$out['errorCode'] = $e->getCode();
 		}
 
-		switch ($this->response->getStatusCode()){
+		switch ($this->response->getStatusCode()) {
 			case Response::HTTP_NOT_FOUND:
 				$out['error'] = '404 not found';
+				$out['errorCode'] = $this->response->getStatusCode();
 				break;
 		}
 
-		if(!is_null($out['error'])){
+		if (!is_null($out['error'])){
 			$out['success'] = false;
 		}
 		$out['data'] = $result;
@@ -213,23 +243,25 @@ class RestBase
 		static::getEventDispatcher()->dispatch('request.afterResult', $this->event);
 
 		$response = '';
-		switch ($this->request->getFormat(false)){
-			case 'xml':
 
+		switch ($this->request->getRequestFormat()) {
+			case 'xml':
+				$response = $this->responseConvertor->encode($out);
 				break;
 			case 'html':
 				break;
 			default:
-				if($this->options['JSON_UNESCAPED_UNICODE']){
-					$response = Json::encode($out, JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_UNICODE);
+				if ($this->options['JSON_UNESCAPED_UNICODE']){
+					$response = Json::encode($out, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE);
 				} else {
 					$response = Json::encode($out);
 				}
-
-				$this->response->headers->set('Content-type', Request::getMimeTypes($this->request->getRequestFormat()));
-				$this->response->headers->set('Accept', Request::getMimeTypes($this->request->getRequestFormat()));
 				break;
 		}
+
+		$this->response->headers->set('Content-type', Request::getMimeTypes($this->request->getRequestFormat()));
+		$this->response->headers->set('Accept', Request::getMimeTypes($this->request->getRequestFormat()));
+
 		$this->response->setContent($response);
 
 		$this->event->setResponse($this->response);
@@ -260,9 +292,10 @@ class RestBase
 	 */
 	public static function getEventDispatcher()
 	{
-		if(is_null(static::$eventDispatcher)){
+		if (is_null(static::$eventDispatcher)){
 			static::$eventDispatcher = new EventDispatcher();
 		}
+
 		return static::$eventDispatcher;
 	}
 
